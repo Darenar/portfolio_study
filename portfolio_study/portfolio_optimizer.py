@@ -1,29 +1,16 @@
+import logging
+
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
 
-import logging
-
-
-def calculate_portolio_returns(mean_returns: pd.DataFrame, factor: int = 1, weights: pd.DataFrame=None) -> float:
-    if weights is None:
-        return ((1 + mean_returns) ** factor) - 1.
-    return np.sum(mean_returns * factor * weights)
-
-def calculate_portolio_risk(cov_matrix: pd.DataFrame, factor: int = 1, weights: pd.DataFrame=None) -> float:
-    if weights is None:
-        std_vector = pd.Series(np.sqrt(np.diag(cov_matrix))[0], index=cov_matrix.index)
-        return std_vector * np.sqrt(factor)
-    tmp= np.dot(weights.T, np.dot(cov_matrix * factor, weights))
-    if tmp <= 0:
-        tmp = 1e-20  # set std to a tiny number
-    return np.sqrt(tmp)
+from .utils import get_time_factor, calculate_portolio_risk, calculate_portolio_returns
 
 
 def get_efficient_portfolio(mean_returns: pd.DataFrame, cov_matrix: pd.DataFrame, target: float = None,
-                     freq: str = 'monthly', min_asset_weight: float = 0., max_asset_weight: float = 1., 
-                    prev_weights: pd.DataFrame = None, 
-                     cost: float = None, eps: float = 1e-4) -> pd.Series:
+                            freq: str = 'monthly', min_asset_weight: float = 0., max_asset_weight: float = 1., 
+                            prev_weights: pd.DataFrame = None, 
+                            cost: float = None, eps: float = 1e-4) -> pd.Series:
     # Define main params for all portfolios
     port_params = dict(
         mean_returns=mean_returns,
@@ -66,15 +53,6 @@ def get_efficient_portfolio(mean_returns: pd.DataFrame, cov_matrix: pd.DataFrame
     return port_weights
 
 
-def get_time_factor(freq: str)->float:
-    if freq=='daily':
-        return 252
-    elif freq=='monthly':
-        return 12
-    else:
-        raise NotImplementedError(f"Unknown parameters freq = {freq} has been provided to the object.")
-
-
 def run_optimization(mean_returns: pd.DataFrame, cov_matrix: pd.DataFrame, target: float = None,
                      freq: str = 'monthly', min_asset_weight: float = 0., max_asset_weight: float = 1., 
                      objective_type: str = 'max_return', prev_weights: pd.DataFrame = None, 
@@ -101,6 +79,12 @@ def run_optimization(mean_returns: pd.DataFrame, cov_matrix: pd.DataFrame, targe
             logging.getLogger(__name__).info(f"Target return {target} has been provided. Optimizing with the constraint.")
             target_constraint_func = lambda w: calculate_portolio_returns(weights=w, mean_returns=mean_returns, factor=factor) - target
             constraints.append({'type': 'eq', 'fun': target_constraint_func})
+    elif objective_type == 'max_sharpe':
+        logging.getLogger(__name__).info(f"Optimizing by maximizing sharpe ratio.")
+        objective = lambda w: (
+            -(calculate_portolio_returns(weights=w, mean_returns=mean_returns, factor=factor)) /
+            calculate_portolio_risk(weights=w, cov_matrix=cov_matrix, factor=factor)
+        )
     else:
         raise NotImplementedError(f"Got unexpected objective type {objective_type}. Should be either min_risk or max_return.")
 
